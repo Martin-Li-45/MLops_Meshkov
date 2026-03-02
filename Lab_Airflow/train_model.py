@@ -49,7 +49,7 @@ def train():
     """
     # Получаем путь к папке с текущим файлом
     dag_folder = '/home/mint/airflow/dags/'  # ЯВНО УКАЗЫВАЕМ ПУТЬ
-    file_path = os.path.join(dag_folder, 'df_clear.csv')
+    file_path = f'{dag_folder}df_clear.csv'
     
     # Загружаем очищенные данные
     df = pd.read_csv(file_path)
@@ -121,7 +121,7 @@ def train():
         mlflow.sklearn.log_model(best, "model", signature=signature)
         
         # Сохраняем модель локально
-        model_path = os.path.join(dag_folder, "phone_price_model.pkl")
+        model_path = f'{dag_folder}phone_price_model.pkl'
         with open(model_path, "wb") as file:
             joblib.dump({
                 'model': best,
@@ -147,7 +147,7 @@ def train():
             print(coef_df.head(10))
             
             # Сохраняем важность признаков
-            importance_path = os.path.join(dag_folder, 'feature_importance.csv')
+            importance_path = f'{dag_folder}feature_importance.csv'
             coef_df.to_csv(importance_path, index=False)
 
 if __name__ == "__main__":
