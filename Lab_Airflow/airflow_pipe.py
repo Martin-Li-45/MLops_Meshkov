@@ -21,12 +21,12 @@ def download_data():
     # Удаляем ненужный первый столбец (индекс)
     if 'Unnamed: 0' in df.columns:
         df = df.drop(columns=['Unnamed: 0'])
-    df.to_csv("phones.csv", index=False)
+    df.to_csv('/home/mint/airflow/dags/phones.csv', index=False)
     print("Загружено записей: ", df.shape)
     return df
 
 def clear_data():
-    df = pd.read_csv("phones.csv")
+    df = pd.read_csv('/home/mint/airflow/dags/phones.csv')
     
     # Определяем типы колонок для вашего датасета
     cat_columns = ['Brand', 'Model', 'Touchscreen', 'Operating system', 
@@ -128,7 +128,7 @@ def clear_data():
                 df = df.drop(columns=[col])
     
     # Сохраняем очищенные данные
-    df.to_csv('df_clear.csv', index=False)
+    df.to_csv('/home/mint/airflow/dags/df_clear.csv', index=False)
     print("Очистка завершена. Итоговый размер:", df.shape)
     return True
 
