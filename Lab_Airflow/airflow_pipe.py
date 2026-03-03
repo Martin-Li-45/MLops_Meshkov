@@ -136,7 +136,7 @@ dag_phones = DAG(
     dag_id="phone_price_prediction",
     start_date=datetime(2025, 2, 3),
     max_active_tasks=4,
-    schedule=timedelta(minutes=30),
+    schedule=timedelta(minutes=5),
     max_active_runs=1,
     catchup=False,
 )
