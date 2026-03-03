@@ -78,10 +78,10 @@ def clear_data():
 
 # DAG конфигурация
 dag_cars = DAG(
-    dag_id="train_smartphones_pipe",
+    dag_id="phone_price_prediction",
     start_date=datetime(2025, 2, 3),
-    concurrency=4,
-    schedule_interval=timedelta(hours=1),
+    max_active_tasks=4,
+    schedule=timedelta(minutes=30),
     max_active_runs=1,
     catchup=False,
 )
