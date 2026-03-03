@@ -45,7 +45,6 @@ def clear_data():
     print(f"Числовые колонки: {available_num}")
     
     # Очистка данных от выбросов
-    
     # 1. Удаляем записи с отрицательной ценой или слишком низкой ценой
     question_price = df[df['Price'] < 1000]
     if len(question_price) > 0:
@@ -102,38 +101,38 @@ def clear_data():
     df = df.reset_index(drop=True)
     
     # Кодируем категориальные признаки
-    # Для бинарных признаков (Yes/No) используем простой OrdinalEncoder
+    # Для бинарных признаков (Yes/No) используем map
     binary_features = ['Touchscreen', 'Wi-Fi', 'Bluetooth', 'GPS', '3G', '4G/ LTE']
     binary_available = [col for col in binary_features if col in df.columns]
     
     for col in binary_available:
         df[col] = df[col].map({'Yes': 1, 'No': 0})
     
-    # Для Brand, Model, Operating system используем OneHotEncoder
-    # Но сначала проверим количество уникальных значений
+    # Для Brand, Model, Operating system
     high_card_features = ['Brand', 'Model', 'Operating system']
     high_card_available = [col for col in high_card_features if col in df.columns]
     
-    # Используем OneHotEncoder для категориальных с большим количеством значений
     for col in high_card_available:
         if col in df.columns:
-            # Проверяем количество уникальных значений
-            if df[col].nunique() < 50:  # Если меньше 50, применяем OneHotEncoder
+            if df[col].nunique() < 50:
                 dummies = pd.get_dummies(df[col], prefix=col, drop_first=True)
                 df = pd.concat([df, dummies], axis=1)
                 df = df.drop(columns=[col])
-            else:  # Если много уникальных значений, используем частотное кодирование
+            else:
                 freq_encoding = df[col].value_counts().to_dict()
                 df[f'{col}_freq'] = df[col].map(freq_encoding)
                 df = df.drop(columns=[col])
     
-    # Сохраняем очищенные данные
+    # Удаляем текстовую колонку Name, чтобы не ломать масштабирование
+    if 'Name' in df.columns:
+        df = df.drop(columns=['Name'])
+    
     df.to_csv('/home/mint/airflow/dags/df_clear.csv', index=False)
     print("Очистка завершена. Итоговый размер:", df.shape)
     return True
 
 # Настройка DAG
-dag_cars = DAG(
+dag_phones = DAG(
     dag_id="phone_price_prediction",
     start_date=datetime(2025, 2, 3),
     max_active_tasks=4,
@@ -145,19 +144,19 @@ dag_cars = DAG(
 download_task = PythonOperator(
     python_callable=download_data, 
     task_id="download_phones", 
-    dag=dag_cars
+    dag=dag_phones
 )
 
 clear_task = PythonOperator(
     python_callable=clear_data, 
     task_id="clear_phones", 
-    dag=dag_cars
+    dag=dag_phones
 )
 
 train_task = PythonOperator(
     python_callable=train, 
     task_id="train_model", 
-    dag=dag_cars
+    dag=dag_phones
 )
 
 download_task >> clear_task >> train_task

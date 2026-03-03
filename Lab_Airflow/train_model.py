@@ -1,4 +1,3 @@
-from os import name
 from sklearn.preprocessing import StandardScaler, PowerTransformer
 import pandas as pd
 from sklearn.model_selection import train_test_split
