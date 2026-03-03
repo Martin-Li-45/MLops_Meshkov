@@ -1,83 +1,138 @@
 import pandas as pd
-from sklearn.preprocessing import StandardScaler, OrdinalEncoder, PowerTransformer
+from sklearn.preprocessing import StandardScaler, OrdinalEncoder, OneHotEncoder, PowerTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.compose import ColumnTransformer
+from sklearn.linear_model import SGDRegressor
+from sklearn.metrics import root_mean_squared_error
 import numpy as np
+import matplotlib.pyplot as plt
 from datetime import datetime
 from airflow import DAG
 from airflow.operators.python import PythonOperator
+import requests
 from pathlib import Path
+import os
 from datetime import timedelta
 from train_model import train
 
 def download_data():
-    # Используем локальный файл или загружаем из URL
-    df = pd.read_csv('ndtv_data_final.csv')
-    df.to_csv("smartphones.csv", index=False)
-    print(f"df: {df.shape}")
+    # Загружаем ваш локальный файл
+    df = pd.read_csv('/home/mint/airflow/dags/ndtv_data_final.csv', delimiter=',')
+    # Удаляем ненужный первый столбец (индекс)
+    if 'Unnamed: 0' in df.columns:
+        df = df.drop(columns=['Unnamed: 0'])
+    df.to_csv('/home/mint/airflow/dags/phones.csv', index=False)
+    print("Загружено записей: ", df.shape)
     return df
 
 def clear_data():
-    df = pd.read_csv("smartphones.csv")
+    df = pd.read_csv('/home/mint/airflow/dags/phones.csv')
     
-    # Категориальные и числовые колонки для смартфонов
-    cat_columns = ['Brand', 'Model', 'Operating system', 'Touchscreen', 
+    # Определяем типы колонок для вашего датасета
+    cat_columns = ['Brand', 'Model', 'Touchscreen', 'Operating system', 
                    'Wi-Fi', 'Bluetooth', 'GPS', '3G', '4G/ LTE']
+    
     num_columns = ['Battery capacity (mAh)', 'Screen size (inches)', 
-                   'Resolution x', 'Resolution y', 'Processor', 
-                   'RAM (MB)', 'Internal storage (GB)', 
-                   'Rear camera', 'Front camera', 'Number of SIMs', 'Price']
+                   'Resolution x', 'Resolution y', 'Processor', 'RAM (MB)', 
+                   'Internal storage (GB)', 'Rear camera', 'Front camera', 
+                   'Number of SIMs', 'Price']
     
-    # Очистка данных - удаление выбросов
+    # Проверяем наличие колонок
+    available_cat = [col for col in cat_columns if col in df.columns]
+    available_num = [col for col in num_columns if col in df.columns]
     
-    # Слишком маленькая батарея
-    question_battery = df[df['Battery capacity (mAh)'] < 1000]
-    df = df.drop(question_battery.index)
+    print(f"Категориальные колонки: {available_cat}")
+    print(f"Числовые колонки: {available_num}")
     
-    # Слишком большая батарея (нереалистично)
-    question_battery = df[df['Battery capacity (mAh)'] > 10000]
-    df = df.drop(question_battery.index)
-    
-    # Слишком маленький экран
-    question_screen = df[df['Screen size (inches)'] < 3.0]
-    df = df.drop(question_screen.index)
-    
-    # Слишком большой экран (нереалистично)
-    question_screen = df[df['Screen size (inches)'] > 10.0]
-    df = df.drop(question_screen.index)
-    
-    # Слишком низкая цена
+    # Очистка данных от выбросов
+    # 1. Удаляем записи с отрицательной ценой или слишком низкой ценой
     question_price = df[df['Price'] < 1000]
-    df = df.drop(question_price.index)
+    if len(question_price) > 0:
+        print(f"Удаляем {len(question_price)} записей с ценой < 1000")
+        df = df.drop(question_price.index)
     
-    # Слишком высокая цена (выбросы)
-    question_price = df[df['Price'] > 200000]
-    df = df.drop(question_price.index)
+    # 2. Удаляем слишком дорогие телефоны (выбросы)
+    question_price_high = df[df['Price'] > 200000]
+    if len(question_price_high) > 0:
+        print(f"Удаляем {len(question_price_high)} записей с ценой > 200000")
+        df = df.drop(question_price_high.index)
     
-    # Слишком мало RAM
-    question_ram = df[df['RAM (MB)'] < 512]
-    df = df.drop(question_ram.index)
+    # 3. Проверяем батарею (реалистичные значения)
+    if 'Battery capacity (mAh)' in df.columns:
+        question_battery = df[df['Battery capacity (mAh)'] < 500]
+        if len(question_battery) > 0:
+            print(f"Удаляем {len(question_battery)} записей с батареей < 500 mAh")
+            df = df.drop(question_battery.index)
+        
+        question_battery_high = df[df['Battery capacity (mAh)'] > 10000]
+        if len(question_battery_high) > 0:
+            print(f"Удаляем {len(question_battery_high)} записей с батареей > 10000 mAh")
+            df = df.drop(question_battery_high.index)
     
-    # Слишком много RAM (нереалистично для датасета)
-    question_ram = df[df['RAM (MB)'] > 20000]
-    df = df.drop(question_ram.index)
+    # 4. Проверяем RAM (реалистичные значения)
+    if 'RAM (MB)' in df.columns:
+        question_ram = df[df['RAM (MB)'] < 256]
+        if len(question_ram) > 0:
+            print(f"Удаляем {len(question_ram)} записей с RAM < 256 MB")
+            df = df.drop(question_ram.index)
+        
+        question_ram_high = df[df['RAM (MB)'] > 16000]
+        if len(question_ram_high) > 0:
+            print(f"Удаляем {len(question_ram_high)} записей с RAM > 16000 MB")
+            df = df.drop(question_ram_high.index)
     
+    # 5. Проверяем внутреннюю память
+    if 'Internal storage (GB)' in df.columns:
+        question_storage = df[df['Internal storage (GB)'] < 1]
+        if len(question_storage) > 0:
+            print(f"Удаляем {len(question_storage)} записей с памятью < 1 GB")
+            df = df.drop(question_storage.index)
+    
+    # 6. Проверяем разрешение экрана
+    if 'Resolution x' in df.columns and 'Resolution y' in df.columns:
+        question_res_x = df[df['Resolution x'] < 200]
+        question_res_y = df[df['Resolution y'] < 200]
+        if len(question_res_x) > 0:
+            df = df.drop(question_res_x.index)
+        if len(question_res_y) > 0:
+            df = df.drop(question_res_y.index)
+    
+    # Сбрасываем индекс после удалений
     df = df.reset_index(drop=True)
     
-    # Кодирование категориальных переменных
-    ordinal = OrdinalEncoder(handle_unknown='use_encoded_value', unknown_value=-1)
-    ordinal.fit(df[cat_columns])
-    Ordinal_encoded = ordinal.transform(df[cat_columns])
-    df_ordinal = pd.DataFrame(Ordinal_encoded, columns=cat_columns)
-    df[cat_columns] = df_ordinal[cat_columns]
+    # Кодируем категориальные признаки
+    # Для бинарных признаков (Yes/No) используем map
+    binary_features = ['Touchscreen', 'Wi-Fi', 'Bluetooth', 'GPS', '3G', '4G/ LTE']
+    binary_available = [col for col in binary_features if col in df.columns]
     
-    # Заполнение пропусков (если есть)
-    df = df.fillna(df.median(numeric_only=True))
+    for col in binary_available:
+        df[col] = df[col].map({'Yes': 1, 'No': 0})
     
-    df.to_csv('df_clear.csv', index=False)
-    print(f"Cleaned data: {df.shape}")
+    # Для Brand, Model, Operating system
+    high_card_features = ['Brand', 'Model', 'Operating system']
+    high_card_available = [col for col in high_card_features if col in df.columns]
+    
+    for col in high_card_available:
+        if col in df.columns:
+            if df[col].nunique() < 50:
+                dummies = pd.get_dummies(df[col], prefix=col, drop_first=True)
+                df = pd.concat([df, dummies], axis=1)
+                df = df.drop(columns=[col])
+            else:
+                freq_encoding = df[col].value_counts().to_dict()
+                df[f'{col}_freq'] = df[col].map(freq_encoding)
+                df = df.drop(columns=[col])
+    
+    # Удаляем текстовую колонку Name, чтобы не ломать масштабирование
+    if 'Name' in df.columns:
+        df = df.drop(columns=['Name'])
+    
+    df.to_csv('/home/mint/airflow/dags/df_clear.csv', index=False)
+    print("Очистка завершена. Итоговый размер:", df.shape)
     return True
 
-# DAG конфигурация
-dag_cars = DAG(
+# Настройка DAG
+dag_phones = DAG(
     dag_id="phone_price_prediction",
     start_date=datetime(2025, 2, 3),
     max_active_tasks=4,
@@ -88,20 +143,20 @@ dag_cars = DAG(
 
 download_task = PythonOperator(
     python_callable=download_data, 
-    task_id="download_smartphones", 
-    dag=dag_cars
+    task_id="download_phones", 
+    dag=dag_phones
 )
 
 clear_task = PythonOperator(
     python_callable=clear_data, 
-    task_id="clear_smartphones", 
-    dag=dag_cars
+    task_id="clear_phones", 
+    dag=dag_phones
 )
 
 train_task = PythonOperator(
     python_callable=train, 
-    task_id="train_smartphones", 
-    dag=dag_cars
+    task_id="train_model", 
+    dag=dag_phones
 )
 
 download_task >> clear_task >> train_task
