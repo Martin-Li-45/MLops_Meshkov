@@ -1,23 +1,30 @@
-# airflow_phones.py
 import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler, OrdinalEncoder, OneHotEncoder, PowerTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.compose import ColumnTransformer # т.н. преобразователь колонок
+from sklearn.linear_model import SGDRegressor
+from sklearn.metrics import root_mean_squared_error
+import numpy as np
+import matplotlib.pyplot as plt
 from datetime import datetime
 from airflow import DAG
 from airflow.operators.python import PythonOperator
+import requests
+from pathlib import Path
+import os
 from datetime import timedelta
-from train_phones import train
+from train_model import train
 
 def download_data():
-    """Загружает датасет с мобильными телефонами."""
-    # Используем локальный файл, так как в предоставленных данных был CSV.
-    # В реальности URL может быть другим.
-    df = pd.read_csv('ndtv_data_final.csv', index_col=0)
-    df.to_csv("phones.csv", index=False)
-    print("df shape: ", df.shape)
+    df = pd.read_csv('ndtv_data_final.csv', delimiter = ',')
+    df.to_csv("phones.csv", index = False)
+    print("df: ", df.shape)
     return df
 
-def clear_data_phones():
+def clear_data():
     # Загружаем данные
-    df = pd.read_csv("ndtv_data_final.csv", index_col=0)
+    df = pd.read_csv("phones.csv", index_col=0)
     
     # Определяем типы колонок
     cat_columns = ['Brand', 'Model', 'Processor', 'Operating system']
@@ -119,39 +126,23 @@ def clear_data_phones():
     
     # Сохраняем очищенный датасет
     df.to_csv('df_phones_clear.csv')
-    print("Очищенный датасет сохранён в df_phones_clear.csv")
+    print("Очищенный датасет сохранён в df_clear.csv")
     print(f"Размер после очистки: {df.shape}")
     
     return True
 
-# Определение DAG
 dag_phones = DAG(
-    dag_id="phone_price_prediction",
+    dag_id="train_pipe",
     start_date=datetime(2025, 2, 3),
-    max_active_tasks=4,
-    schedule=timedelta(minutes=5),
+    concurrency=4,
+    schedule_interval=timedelta(minutes=5),
+#    schedule="@hourly",
     max_active_runs=1,
     catchup=False,
 )
-
-# Определение задач
-download_task = PythonOperator(
-    python_callable=download_data,
-    task_id="download_phones",
-    dag=dag_phones
-)
-
-clear_task = PythonOperator(
-    python_callable=clear_data,
-    task_id="clear_phones",
-    dag=dag_phones
-)
-
-train_task = PythonOperator(
-    python_callable=train,
-    task_id="train_phones",
-    dag=dag_phones
-)
-
-# Установка последовательности задач
+download_task = PythonOperator(python_callable=download_data, task_id = "download_phones", dag = dag_phones)
+clear_task = PythonOperator(python_callable=clear_data, task_id = "clear_phones", dag = dag_phones)
+train_task = PythonOperator(python_callable=train, task_id = "train_phones", dag = dag_phones)
 download_task >> clear_task >> train_task
+
+
