@@ -11,73 +11,60 @@ def download_data():
     return df
 
 def clear_data():
-    """Очистка и базовая предобработка датасета смартфонов"""
     # Загружаем данные
     df = pd.read_csv("/home/meshkov/airflow/dags/phones.csv", index_col=0)
     
-    # ───────────────────────────────────────────────
-    # 1. Удаляем почти бесполезные для модели колонки
-    # ───────────────────────────────────────────────
-    cols_to_drop = ['Name', 'Model']
-    df = df.drop(columns=[c for c in cols_to_drop if c in df.columns])
+    # Определяем типы колонок
+    cat_columns = ['Brand', 'Processor', 'Operating system']          # Name и Model убираем из кодирования
+    num_columns = ['Battery capacity (mAh)', 'Screen size (inches)', 'Resolution x', 'Resolution y', 
+                   'RAM (MB)', 'Internal storage (GB)', 'Rear camera', 'Front camera', 
+                   'Number of SIMs', 'Price']
+    binary_columns = ['Touchscreen', 'Wi-Fi', 'Bluetooth', 'GPS', '3G', '4G/ LTE']
     
-    # ───────────────────────────────────────────────
-    # 2. Мягкая фильтрация аномалий (не удаляем всё подряд)
-    # ───────────────────────────────────────────────
+    # Сначала преобразуем Yes/No → 1/0 (до удаления строк!)
+    for col in binary_columns:
+        df[col] = df[col].map({"Yes": 1, "No": 0, "yes": 1, "no": 0}).fillna(0).astype(int)
+    
+    # ────────────────────────────────────────────────────────────────
+    # Фильтрация выбросов (оставляем почти как было)
+    # ────────────────────────────────────────────────────────────────
+    
     # Батарея
-    df = df[df["Battery capacity (mAh)"].between(800, 8500)]
+    df = df[df["Battery capacity (mAh)"].between(500, 10000)]
     
     # Экран
-    df = df[df["Screen size (inches)"].between(3.0, 7.8)]
+    df = df[df["Screen size (inches)"].between(3.0, 7.5)]
     
     # Разрешение
-    df = df[df["Resolution x"].between(320, 3840)]
-    df = df[df["Resolution y"].between(480, 4320)]
+    df = df[df["Resolution x"].between(240, 4000)]
+    df = df[df["Resolution y"].between(320, 4000)]
     
     # Оперативка
-    df = df[df["RAM (MB)"].between(512, 24576)]          # до 24 ГБ
+    df = df[df["RAM (MB)"].between(256, 16384)]
     
     # Встроенная память
-    df = df[df["Internal storage (GB)"].between(1, 2048)] # до 2 ТБ
+    df = df[df["Internal storage (GB)"].between(1, 1024)]
     
     # Камеры
     df = df[df["Rear camera"].between(0, 200)]
     df = df[df["Front camera"].between(0, 100)]
     
     # SIM-карты
-    df = df[df["Number of SIMs"].between(1, 3)]
+    df = df[df["Number of SIMs"] <= 3]
     
-    # Цена (в рублях, судя по датасету)
-    df = df[df["Price"].between(3000, 450000)]
+    # Цена
+    df = df[df["Price"].between(1000, 500000)]
     
-    # ───────────────────────────────────────────────
-    # 3. Приводим бинарные признаки к 0/1
-    # ───────────────────────────────────────────────
-    binary_cols = ['Touchscreen', 'Wi-Fi', 'Bluetooth', 'GPS', '3G', '4G/ LTE']
-    
-    for col in binary_cols:
-        if col in df.columns:
-            df[col] = df[col].map({"Yes": 1, "No": 0, 1: 1, 0: 0}).fillna(0).astype(int)
-    
-    # ───────────────────────────────────────────────
-    # 4. Базовая обработка пропусков (если есть)
-    # ───────────────────────────────────────────────
-    # Для числовых — медиана, для категориальных — самая частая
-    num_cols = df.select_dtypes(include=["float64", "int64"]).columns
-    cat_cols = df.select_dtypes(include=["object"]).columns
-    
-    df[num_cols] = df[num_cols].fillna(df[num_cols].median())
-    df[cat_cols] = df[cat_cols].fillna(df[cat_cols].mode().iloc[0])
-    
-    # ───────────────────────────────────────────────
-    # 5. Сбрасываем индекс и сохраняем
-    # ───────────────────────────────────────────────
+    # Сбрасываем индекс после всех удалений
     df = df.reset_index(drop=True)
-    df.to_csv('/home/meshkov/airflow/dags/df_clear.csv', index=False)
     
+    # НЕ кодируем Name, Model, Brand, Processor, OS здесь!
+    # Оставляем их строками → закодирует ColumnTransformer / OneHotEncoder / CatBoost
+    
+    # Сохраняем очищенные "сырые" данные
+    df.to_csv('/home/meshkov/airflow/dags/df_clear.csv', index=False)
     print("Очищенный датасет сохранён в df_clear.csv")
     print(f"Размер после очистки: {df.shape}")
-    print(f"Пропусков осталось: {df.isna().sum().sum()}")
     
     return True
     
